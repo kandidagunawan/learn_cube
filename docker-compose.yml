@@ -1,16 +1,55 @@
-
 version: '2.2'
 
 services:
   cube:
     image: cubejs/cube:v1.3.14
     ports:
-      # It's better to use random port binding for 4000/3000 ports
-      # without it you will not able to start multiple projects inside docker
-      - 4000:4000  # Cube API and Developer Playground
-      - 3000:3000  # Dashboard app, if created
+      - 4000:4000
+      - 3000:3000
     env_file: .env
     volumes:
       - .:/cube/conf
-      # We ignore Cube deps, because they are built-in inside the official Docker image
-      - .empty:/cube/conf/node_modules/@cubejs-backend/
+    depends_on:
+      - postgres_database
+      - clickhouse_db
+
+  postgres_database:
+    image: postgres:16
+    container_name: postgres_database
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: ${CUBEJS_DB_NAME}
+      POSTGRES_USER: ${CUBEJS_DB_USER}
+      POSTGRES_PASSWORD: ${CUBEJS_DB_PASS}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CUBEJS_DB_USER} -d ${CUBEJS_DB_NAME}"]
+      interval: 10s
+      timeout: 10s
+      start_period: 30s
+      retries: 5
+    restart: unless-stopped
+
+  clickhouse_db:
+    image: yandex/clickhouse-server:latest
+    container_name: clickhouse_db
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - clickhouse_logs:/var/log/clickhouse-server
+      - ./init-defaults.sh:/docker-entrypoint-initdb.d/init-defaults.sh
+    environment:
+      CLICKHOUSE_USER: ${CUBEJS_PRE_AGGREGATIONS_DB_USER}
+      CLICKHOUSE_PASSWORD: ${CUBEJS_PRE_AGGREGATIONS_DB_PASS}
+      CLICKHOUSE_DB: ${CUBEJS_PRE_AGGREGATIONS_DB_NAME}
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user ${CUBEJS_PRE_AGGREGATIONS_DB_USER} --password ${CUBEJS_PRE_AGGREGATIONS_DB_PASS} --database ${CUBEJS_PRE_AGGREGATIONS_DB_NAME} --query 'SELECT 1'"]
+      interval: 10s
+      timeout: 10s
+      start_period: 30s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  clickhouse_data:
+  clickhouse_logs:
